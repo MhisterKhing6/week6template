@@ -1,17 +1,23 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Application Components for Containerized Web Application'
+Description: 'Frontend Components for Containerized Web Application'
 
 Parameters:
   EnvironmentName:
     Description: Environment name that will be prefixed to resource names
     Type: String
-    Default: 'weeksixproject-frontend'
+    Default: 'weekfiveproject'
   
-  # Add initial container image parameter
-  InitialContainerImage:
-    Description: Initial container image to use (should be a valid public image)
+  # Frontend container image parameter
+  FrontendContainerImage:
+    Description: Frontend container image to use (should be a valid public image)
     Type: String
-    Default: 'public.ecr.aws/m9u6i6o1/week6-public-repo:image-uploader-backend'
+    Default: 'public.ecr.aws/m9u6i6o1/week6-public-repo:image-uploader-frontend'
+
+  # Backend ALB DNS Name Reference
+  BackendALBDNSName:
+    Description: DNS name of the Backend Application Load Balancer
+    Type: String
+    Default:'week6front-alb'
 
   # Add deployment toggle parameter
   DeployService:
@@ -27,11 +33,11 @@ Conditions:
   ShouldDeployService: !Equals [!Ref DeployService, 'true']
 
 Resources:
-  # Application Load Balancer
-  ApplicationLoadBalancer:
+  # Frontend Application Load Balancer - in public subnets
+  FrontendLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub '${EnvironmentName}-ALB'
+      Name: !Sub '${EnvironmentName}-frontend-ALB'
       Subnets:
         - Fn::ImportValue: !Sub '${EnvironmentName}-PublicSubnet1'
         - Fn::ImportValue: !Sub '${EnvironmentName}-PublicSubnet2'
@@ -44,13 +50,13 @@ Resources:
           Value: '60'
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentName}-ALB'
+          Value: !Sub '${EnvironmentName}-frontend-ALB'
 
-  ALBTargetGroup:
+  FrontendTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub '${EnvironmentName}-TargetGroup'
-      Port: 8080
+      Name: !Sub '${EnvironmentName}-frontend-TG'
+      Port: 80
       Protocol: HTTP
       VpcId:
         Fn::ImportValue: !Sub '${EnvironmentName}-VpcId'
@@ -59,144 +65,57 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
       HealthCheckProtocol: HTTP
-      HealthCheckPort: '8080'
+      HealthCheckPort: '80'
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentName}-TargetGroup'
+          Value: !Sub '${EnvironmentName}-frontend-TG'
 
-  ALBListener:
+  FrontendALBListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref ALBTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
+          TargetGroupArn: !Ref FrontendTargetGroup
+      LoadBalancerArn: !Ref FrontendLoadBalancer
       Port: 80
       Protocol: HTTP
 
-  # ECS Cluster
-  ECSCluster:
-    Type: AWS::ECS::Cluster
-    Properties:
-      ClusterName: !Sub '${EnvironmentName}-Cluster'
-      CapacityProviders:
-        - FARGATE
-        - FARGATE_SPOT
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-
-  # IAM Roles
-  ECSTaskExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy'
-        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
-        - 'arn:aws:iam::aws:policy/AmazonSSMFullAccess'
-      Policies:
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 's3:GetObject'
-                  - 's3:PutObject'
-                  - 's3:ListBucket'
-                  - 's3:DeleteObject'
-                Resource:
-                  - !Sub
-                    - 'arn:aws:s3:::${BucketName}'
-                    - BucketName: !ImportValue 
-                        Fn::Sub: '${EnvironmentName}-S3BucketName'
-                  - !Sub
-                    - 'arn:aws:s3:::${BucketName}/*'
-                    - BucketName: !ImportValue 
-                        Fn::Sub: '${EnvironmentName}-S3BucketName'
-      Tags:
-        - Key: Name
-          Value: !Sub '${EnvironmentName}-TaskExecutionRole'
-
-  # Task Role with RDS and SSM access
-  ECSTaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ecs-tasks.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AmazonRDSFullAccess'
-        - 'arn:aws:iam::aws:policy/AmazonSSMFullAccess'
-      Policies:
-        - PolicyName: S3Access
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 's3:GetObject'
-                  - 's3:PutObject'
-                  - 's3:ListBucket'
-                  - 's3:DeleteObject'
-                Resource:
-                  - !Sub
-                    - 'arn:aws:s3:::${BucketName}'
-                    - BucketName: !ImportValue 
-                        Fn::Sub: '${EnvironmentName}-S3BucketName'
-                  - !Sub
-                    - 'arn:aws:s3:::${BucketName}/*'
-                    - BucketName: !ImportValue 
-                        Fn::Sub: '${EnvironmentName}-S3BucketName'
-      Tags:
-        - Key: Name
-          Value: !Sub '${EnvironmentName}-TaskRole'
-
   # CloudWatch Logs
-  CloudWatchLogsGroup:
+  FrontendCloudWatchLogsGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub '/ecs/${EnvironmentName}'
+      LogGroupName: !Sub '/ecs/${EnvironmentName}-frontend'
       RetentionInDays: 30
 
-  # Task Definition - using minimum CPU/RAM
-  WebAppTaskDefinition:
+  # Task Definition for Frontend
+  FrontendTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub '${EnvironmentName}-task'
+      Family: !Sub '${EnvironmentName}-frontend-task'
       Cpu: '256'
       Memory: '512'
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
-      ExecutionRoleArn: !Ref ECSTaskExecutionRole
-      TaskRoleArn: !Ref ECSTaskRole
+      ExecutionRoleArn: 
+        Fn::ImportValue: !Sub '${EnvironmentName}-ECSTaskRoleArn'
+      TaskRoleArn: 
+        Fn::ImportValue: !Sub '${EnvironmentName}-ECSTaskRoleArn'
       ContainerDefinitions:
-        - Name: !Sub '${EnvironmentName}-container'
-          Image: !Ref InitialContainerImage
+        - Name: !Sub '${EnvironmentName}-frontend-container'
+          Image: !Ref FrontendContainerImage
           Essential: true
           PortMappings:
-            - ContainerPort: 8080
-              HostPort: 8080
+            - ContainerPort: 80
+              HostPort: 80
               Protocol: tcp
           LogConfiguration:
             LogDriver: awslogs
             Options:
-              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-group: !Ref FrontendCloudWatchLogsGroup
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
           Environment:
@@ -205,24 +124,26 @@ Resources:
                 Fn::Sub: '${EnvironmentName}-S3BucketName'
             - Name: AWS_REGION
               Value: !Ref AWS::Region
+            - Name: BACKEND_API_URL
+              Value: !Sub 'http://${BackendALBDNSName}'
           HealthCheck:
             Command:
               - CMD-SHELL
-              - curl -f http://localhost:8080/ || exit 1
+              - curl -f http://localhost:80/ || exit 1
             Interval: 30
             Timeout: 5
             Retries: 3
             StartPeriod: 60
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentName}-TaskDefinition'
+          Value: !Sub '${EnvironmentName}-frontend-TaskDefinition'
 
   # Green Target Group for Blue/Green Deployment
-  GreenTargetGroup:
+  FrontendGreenTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub '${EnvironmentName}-green-tg'
-      Port: 8080
+      Name: !Sub '${EnvironmentName}-frontend-green-tg'
+      Port: 80
       Protocol: HTTP
       VpcId:
         Fn::ImportValue: !Sub '${EnvironmentName}-VpcId'
@@ -231,58 +152,42 @@ Resources:
       HealthCheckIntervalSeconds: 30
       HealthCheckPath: /
       HealthCheckProtocol: HTTP
-      HealthCheckPort: '8080'
+      HealthCheckPort: '80'
       HealthCheckTimeoutSeconds: 5
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 2
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentName}-GreenTG'
+          Value: !Sub '${EnvironmentName}-frontend-GreenTG'
 
   # Test listener for Blue/Green deployment testing
-  TestListener:
+  FrontendTestListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref GreenTargetGroup
-      LoadBalancerArn: !Ref ApplicationLoadBalancer
+          TargetGroupArn: !Ref FrontendGreenTargetGroup
+      LoadBalancerArn: !Ref FrontendLoadBalancer
       Port: 8080
       Protocol: HTTP
 
-  # CodeDeploy Service Role
-  CodeDeployServiceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: codedeploy.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS'
-      Tags:
-        - Key: Name
-          Value: !Sub '${EnvironmentName}-CodeDeployRole'
-
-  # CodeDeploy resources for Blue/Green deployment
-  CodeDeployApplication:
+  # CodeDeploy Application for Frontend
+  FrontendCodeDeployApplication:
     Type: AWS::CodeDeploy::Application
     Properties:
-      ApplicationName: !Sub '${EnvironmentName}-deploy-app'
+      ApplicationName: !Sub '${EnvironmentName}-frontend-deploy-app'
       ComputePlatform: ECS
 
-  # Conditionally deploy the ECS service
-  WebAppService:
+  # Conditionally deploy the frontend ECS service
+  FrontendService:
     Type: AWS::ECS::Service
     Condition: ShouldDeployService
-    DependsOn: ALBListener
+    DependsOn: FrontendALBListener
     Properties:
-      ServiceName: !Sub '${EnvironmentName}-service'
-      Cluster: !Ref ECSCluster
-      TaskDefinition: !Ref WebAppTaskDefinition
+      ServiceName: !Sub '${EnvironmentName}-frontend-service'
+      Cluster: 
+        Fn::ImportValue: !Sub '${EnvironmentName}-ECSCluster'
+      TaskDefinition: !Ref FrontendTaskDefinition
       DesiredCount: 2
       DeploymentController:
         Type: CODE_DEPLOY
@@ -292,29 +197,30 @@ Resources:
           SecurityGroups:
             - Fn::ImportValue: !Sub '${EnvironmentName}-ECSSecurityGroupId'
           Subnets:
-            - Fn::ImportValue: !Sub '${EnvironmentName}-PrivateSubnet1'
-            - Fn::ImportValue: !Sub '${EnvironmentName}-PrivateSubnet2'
+            - Fn::ImportValue: !Sub '${EnvironmentName}-PublicSubnet1'
+            - Fn::ImportValue: !Sub '${EnvironmentName}-PublicSubnet2'
       LoadBalancers:
-        - ContainerName: !Sub '${EnvironmentName}-container'
-          ContainerPort: 8080
-          TargetGroupArn: !Ref ALBTargetGroup
+        - ContainerName: !Sub '${EnvironmentName}-frontend-container'
+          ContainerPort: 80
+          TargetGroupArn: !Ref FrontendTargetGroup
       HealthCheckGracePeriodSeconds: 60
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100
       Tags:
         - Key: Name
-          Value: !Sub '${EnvironmentName}-Service'
+          Value: !Sub '${EnvironmentName}-frontend-Service'
 
   # Conditionally deploy the CodeDeploy deployment group
-  CodeDeployDeploymentGroup:
+  FrontendCodeDeployDeploymentGroup:
     Type: AWS::CodeDeploy::DeploymentGroup
     Condition: ShouldDeployService
     Properties:
-      ApplicationName: !Ref CodeDeployApplication
-      DeploymentGroupName: !Sub '${EnvironmentName}-deploy-group'
+      ApplicationName: !Ref FrontendCodeDeployApplication
+      DeploymentGroupName: !Sub '${EnvironmentName}-frontend-deploy-group'
       DeploymentConfigName: CodeDeployDefault.ECSAllAtOnce
-      ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+      ServiceRoleArn: 
+        Fn::ImportValue: !Sub '${EnvironmentName}-CodeDeployRoleArn'
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
@@ -325,39 +231,40 @@ Resources:
           Action: TERMINATE
           TerminationWaitTimeInMinutes: 5
       ECSServices:
-        - ClusterName: !Ref ECSCluster
-          ServiceName: !GetAtt WebAppService.Name
+        - ClusterName: 
+            Fn::ImportValue: !Sub '${EnvironmentName}-ECSCluster'
+          ServiceName: !GetAtt FrontendService.Name
       LoadBalancerInfo:
         TargetGroupPairInfoList:
           - ProdTrafficRoute:
               ListenerArns:
-                - !Ref ALBListener
+                - !Ref FrontendALBListener
             TestTrafficRoute:
               ListenerArns:
-                - !Ref TestListener
+                - !Ref FrontendTestListener
             TargetGroups:
-              - Name: !GetAtt ALBTargetGroup.TargetGroupName
-              - Name: !GetAtt GreenTargetGroup.TargetGroupName
+              - Name: !GetAtt FrontendTargetGroup.TargetGroupName
+              - Name: !GetAtt FrontendGreenTargetGroup.TargetGroupName
 
   # Auto Scaling (only when service is deployed)
-  WebAppAutoScalingTarget:
+  FrontendAutoScalingTarget:
     Type: AWS::ApplicationAutoScaling::ScalableTarget
     Condition: ShouldDeployService
     Properties:
       MaxCapacity: 10
       MinCapacity: 2
-      ResourceId: !Sub 'service/${ECSCluster}/${WebAppService.Name}'
+      ResourceId: !Sub 'service/${ImportValue:${EnvironmentName}-ECSCluster}/${FrontendService.Name}'
       ScalableDimension: ecs:service:DesiredCount
       ServiceNamespace: ecs
       RoleARN: !Sub 'arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService'
 
-  WebAppAutoScalingPolicy:
+  FrontendAutoScalingPolicy:
     Type: AWS::ApplicationAutoScaling::ScalingPolicy
     Condition: ShouldDeployService
     Properties:
-      PolicyName: !Sub '${EnvironmentName}-cpu-scaling'
+      PolicyName: !Sub '${EnvironmentName}-frontend-cpu-scaling'
       PolicyType: TargetTrackingScaling
-      ScalingTargetId: !Ref WebAppAutoScalingTarget
+      ScalingTargetId: !Ref FrontendAutoScalingTarget
       TargetTrackingScalingPolicyConfiguration:
         PredefinedMetricSpecification:
           PredefinedMetricType: ECSServiceAverageCPUUtilization
@@ -366,32 +273,20 @@ Resources:
         ScaleOutCooldown: 60
 
 Outputs:
-  AlbDnsName:
-    Description: DNS name of the Application Load Balancer
-    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  FrontendAlbDnsName:
+    Description: DNS name of the Frontend Application Load Balancer
+    Value: !GetAtt FrontendLoadBalancer.DNSName
     Export:
-      Name: !Sub '${EnvironmentName}-AlbDnsName'
+      Name: !Sub '${EnvironmentName}-FrontendAlbDnsName'
 
-  ALBTargetGroupArn:
-    Description: ARN of the ALB Target Group
-    Value: !Ref ALBTargetGroup
+  FrontendTargetGroupArn:
+    Description: ARN of the Frontend ALB Target Group
+    Value: !Ref FrontendTargetGroup
     Export:
-      Name: !Sub '${EnvironmentName}-ALBTargetGroupArn'
+      Name: !Sub '${EnvironmentName}-FrontendTargetGroupArn'
 
-  ECSCluster:
-    Description: Name of the ECS Cluster
-    Value: !Ref ECSCluster
-    Export:
-      Name: !Sub '${EnvironmentName}-ECSCluster'
-
-  DeploymentEnabled:
-    Description: Whether the ECS service is deployed
+  FrontendDeploymentEnabled:
+    Description: Whether the Frontend ECS service is deployed
     Value: !Ref DeployService
     Export:
-      Name: !Sub '${EnvironmentName}-DeploymentEnabled'
-
-  ECSTaskRoleArn:
-    Description: ARN of the ECS Task Role
-    Value: !GetAtt ECSTaskRole.Arn
-    Export:
-      Name: !Sub '${EnvironmentName}-ECSTaskRoleArn'
+      Name: !Sub '${EnvironmentName}-FrontendDeploymentEnabled'
