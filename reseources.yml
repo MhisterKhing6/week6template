@@ -478,10 +478,10 @@ Resources:
       BlueGreenDeploymentConfiguration:
         DeploymentReadyOption:
           ActionOnTimeout: STOP_DEPLOYMENT
-          WaitTimeInMinutes: 5
+          WaitTimeInMinutes: 20
         TerminateBlueInstancesOnDeploymentSuccess:
           Action: TERMINATE
-          TerminationWaitTimeInMinutes: 5
+          TerminationWaitTimeInMinutes: 3
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
@@ -514,10 +514,10 @@ Resources:
       BlueGreenDeploymentConfiguration:
         DeploymentReadyOption:
           ActionOnTimeout: STOP_DEPLOYMENT
-          WaitTimeInMinutes: 5
+          WaitTimeInMinutes: 20
         TerminateBlueInstancesOnDeploymentSuccess:
           Action: TERMINATE
-          TerminationWaitTimeInMinutes: 5
+          TerminationWaitTimeInMinutes: 3
       DeploymentStyle:
         DeploymentType: BLUE_GREEN
         DeploymentOption: WITH_TRAFFIC_CONTROL
