@@ -1,1 +1,8 @@
 template-file-path: reseources.yml
+parameters:
+  EnvironmentName: weekfiveproject
+  ServiceName: frontend-service
+  TaskCount: '2'
+  BackendContainerImage: public.ecr.aws/m9u6i6o1/week6-public-repo:image-uploader-backend
+  FrontendContainerImage: public.ecr.aws/m9u6i6o1/week6-public-repo:image-uploader-frontend
+tags: {}
